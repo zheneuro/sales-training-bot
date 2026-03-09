@@ -1,0 +1,9 @@
+{
+  "name": "@sales-training/backend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "echo \"Backend app not initialized yet\"",
+    "build": "echo \"Backend build not configured yet\""
+  }
+}

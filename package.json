@@ -1,0 +1,10 @@
+{
+  "name": "sales-training-platform",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.30.3",
+  "scripts": {
+    "dev": "echo \"Root dev script not configured yet\"",
+    "build": "echo \"Root build script not configured yet\""
+  }
+}

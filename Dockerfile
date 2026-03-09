@@ -17,7 +17,8 @@ RUN pnpm install --frozen-lockfile
 
 # Generate Prisma Client
 WORKDIR /app/apps/backend
-ENV PRISMA_SKIP_ENV_VALIDATION=true\nENV DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy"
+ENV PRISMA_SKIP_ENV_VALIDATION=true
+ENV DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy"
 RUN pnpm dlx prisma generate
 RUN pnpm build
 

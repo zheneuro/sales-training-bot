@@ -17,6 +17,7 @@ RUN pnpm install --frozen-lockfile
 
 # Generate Prisma Client
 WORKDIR /app/apps/backend
+ENV PRISMA_SKIP_ENV_VALIDATION=true
 RUN pnpm dlx prisma generate
 RUN pnpm build
 

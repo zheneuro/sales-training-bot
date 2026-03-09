@@ -46,4 +46,4 @@ WORKDIR /app/apps/backend
 # Need port for Healthchecks / API if any
 EXPOSE 3000
 
-CMD ["pnpm", "start:prod"]
+CMD ["node", "dist/src/main"]

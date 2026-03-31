@@ -7,7 +7,15 @@ const server: Express = express();
 
 export const createServer = async (): Promise<Express> => {
   const app = await NestFactory.create(AppModule, new ExpressAdapter(server));
-  app.enableCors();
+  app.enableCors({
+    origin: [
+      'https://adept-onboarding-admin.vercel.app',
+      'http://localhost:5173',
+      'http://localhost:3000'
+    ],
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    credentials: true,
+  });
   await app.init();
   return server;
 };

@@ -14,10 +14,11 @@ import { AiModule } from './ai/ai.module';
 import { AdminController } from './admin/admin.controller';
 import { AdminService } from './admin/admin.service';
 import { AdminLessonsController } from './admin/admin-lessons.controller';
+import { BotController } from './bot.controller';
 
 @Module({
   imports: [ConfigModule.forRoot({ isGlobal: true }), ScheduleModule.forRoot(), GamificationModule, ProgressModule, AiModule],
-  controllers: [AppController, UsersController, AdminController, AdminLessonsController],
+  controllers: [AppController, UsersController, AdminController, AdminLessonsController, BotController],
   providers: [
     AppService,
     PrismaService,

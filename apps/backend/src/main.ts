@@ -1,13 +1,25 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
+import { ExpressAdapter } from '@nestjs/platform-express';
+import express from 'express';
 
-async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+const server = express();
 
+export const createServer = async () => {
+  const app = await NestFactory.create(AppModule, new ExpressAdapter(server));
   app.enableCors();
+  await app.init();
+  return server;
+};
 
-  const port = Number(process.env.PORT) || 3000;
-
-  await app.listen(port);
+// For local development
+if (process.env.NODE_ENV !== 'production') {
+  createServer().then(() => {
+    const port = process.env.PORT || 3000;
+    server.listen(port, () => {
+      console.log(`Server running on http://localhost:${port}`);
+    });
+  });
 }
-bootstrap();
+
+export default server;

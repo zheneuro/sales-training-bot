@@ -43,14 +43,23 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     this.bot.use(session());
     this.registerHandlers();
 
-    void this.bot
-      .launch()
-      .then(() => {
-        this.logger.log('Telegram bot started');
-      })
-      .catch((error) => {
-        this.logger.error('Telegram bot failed to start', error);
-      });
+    if (process.env.NODE_ENV !== 'production') {
+      void this.bot
+        .launch()
+        .then(() => {
+          this.logger.log('Telegram bot started (polling)');
+        })
+        .catch((error) => {
+          this.logger.error('Telegram bot failed to start', error);
+        });
+    } else {
+      this.logger.log('Telegram bot ready (webhook mode)');
+    }
+  }
+
+  // Handle updates from Vercel/Webhooks
+  async handleUpdate(update: any) {
+    return this.bot.handleUpdate(update);
   }
 
   async onModuleDestroy() {

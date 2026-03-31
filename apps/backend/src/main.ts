@@ -1,16 +1,17 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ExpressAdapter } from '@nestjs/platform-express';
-import express from 'express';
+import express, { Express } from 'express';
 
-const server = express();
+const server: Express = express();
 
-export const createServer = async () => {
+export const createServer = async (): Promise<Express> => {
   const app = await NestFactory.create(AppModule, new ExpressAdapter(server));
   app.enableCors();
   await app.init();
   return server;
 };
+
 
 // For local development
 if (process.env.NODE_ENV !== 'production') {

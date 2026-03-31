@@ -5,6 +5,25 @@ import { PrismaService } from './prisma.service';
 export class LessonsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private get defaultInclude() {
+    return {
+      blocks: {
+        orderBy: {
+          order: 'asc' as const,
+        },
+      },
+      tests: {
+        include: {
+          questions: {
+            include: {
+              answers: true,
+            },
+          },
+        },
+      },
+    };
+  }
+
   async listPublished(projectId?: string) {
     if (projectId) {
       const scopedLessons = await this.prisma.lesson.findMany({
@@ -15,15 +34,7 @@ export class LessonsService {
         orderBy: {
           order: 'asc',
         },
-        select: {
-          id: true,
-          projectId: true,
-          code: true,
-          title: true,
-          description: true,
-          order: true,
-          isPublished: true,
-        },
+        include: this.defaultInclude,
       });
 
       if (scopedLessons.length > 0) {
@@ -38,15 +49,7 @@ export class LessonsService {
         orderBy: {
           order: 'asc',
         },
-        select: {
-          id: true,
-          projectId: true,
-          code: true,
-          title: true,
-          description: true,
-          order: true,
-          isPublished: true,
-        },
+        include: this.defaultInclude,
       });
     }
 
@@ -57,15 +60,7 @@ export class LessonsService {
       orderBy: {
         order: 'asc',
       },
-      select: {
-        id: true,
-        projectId: true,
-        code: true,
-        title: true,
-        description: true,
-        order: true,
-        isPublished: true,
-      },
+      include: this.defaultInclude,
     });
   }
 
@@ -77,13 +72,7 @@ export class LessonsService {
           title,
           isPublished: true,
         },
-        include: {
-          blocks: {
-            orderBy: {
-              order: 'asc',
-            },
-          },
-        },
+        include: this.defaultInclude,
       });
 
       if (scopedLesson) {
@@ -96,13 +85,7 @@ export class LessonsService {
           title,
           isPublished: true,
         },
-        include: {
-          blocks: {
-            orderBy: {
-              order: 'asc',
-            },
-          },
-        },
+        include: this.defaultInclude,
       });
     }
 
@@ -111,13 +94,7 @@ export class LessonsService {
         title,
         isPublished: true,
       },
-      include: {
-        blocks: {
-          orderBy: {
-            order: 'asc',
-          },
-        },
-      },
+      include: this.defaultInclude,
     });
   }
 
@@ -129,13 +106,7 @@ export class LessonsService {
           code,
           isPublished: true,
         },
-        include: {
-          blocks: {
-            orderBy: {
-              order: 'asc',
-            },
-          },
-        },
+        include: this.defaultInclude,
       });
 
       if (scopedLesson) {
@@ -148,13 +119,7 @@ export class LessonsService {
           code,
           isPublished: true,
         },
-        include: {
-          blocks: {
-            orderBy: {
-              order: 'asc',
-            },
-          },
-        },
+        include: this.defaultInclude,
       });
     }
 
@@ -163,13 +128,7 @@ export class LessonsService {
         code,
         isPublished: true,
       },
-      include: {
-        blocks: {
-          orderBy: {
-            order: 'asc',
-          },
-        },
-      },
+      include: this.defaultInclude,
     });
   }
 
@@ -177,10 +136,11 @@ export class LessonsService {
     return this.prisma.lesson.findMany({
       where: projectId ? { projectId } : undefined,
       orderBy: { order: 'asc' },
+      include: this.defaultInclude,
     });
   }
 
-  async create(projectId: string | undefined, data: { title: string; code: string; description?: string; order: number; isPublished: boolean }) {
+  async create(projectId: string | undefined, data: { title: string; code: string; description?: string; order: number; isPublished: boolean; videoUrl?: string; aiPrompt?: string }) {
     if (!projectId) {
       throw new Error('Project ID is required to create a lesson');
     }
@@ -192,7 +152,7 @@ export class LessonsService {
     });
   }
 
-  async update(id: string, data: { title?: string; code?: string; description?: string; order?: number; isPublished?: boolean }) {
+  async update(id: string, data: { title?: string; code?: string; description?: string; order?: number; isPublished?: boolean; videoUrl?: string; aiPrompt?: string }) {
     return this.prisma.lesson.update({
       where: { id },
       data,

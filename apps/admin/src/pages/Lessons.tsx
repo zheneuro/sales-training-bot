@@ -65,6 +65,11 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
           </div>
 
           <div>
+            <label className="block text-sm font-medium text-gray-700">Ссылка на видео (YouTube)</label>
+            <input type="text" value={currentLesson.videoUrl || ''} onChange={e => setCurrentLesson({...currentLesson, videoUrl: e.target.value})} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border" placeholder="https://youtube.com/..." />
+          </div>
+
+          <div>
             <label className="block text-sm font-medium text-gray-700">Описание / Теоретическая часть</label>
             <textarea rows={5} required value={currentLesson.description} onChange={e => setCurrentLesson({...currentLesson, description: e.target.value})} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border" />
           </div>

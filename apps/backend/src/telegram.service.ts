@@ -5,12 +5,16 @@ import { UsersService } from './users.service';
 import { LessonsService } from './lessons.service';
 import { AiService } from './ai/ai.service';
 import { GamificationService } from './gamification/gamification.service';
+import { PrismaService } from './prisma.service';
 
 interface BotContext extends Context {
   session?: {
-    step?: 'awaiting_name' | 'ai_practice';
+    step?: 'awaiting_name' | 'ai_practice' | 'quiz';
     aiContext?: any[];
     currentLessonId?: string;
+    currentTestId?: string;
+    currentQuestionIndex?: number;
+    quizScore?: number;
   };
 }
 
@@ -24,6 +28,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     private readonly lessonsService: LessonsService,
     private readonly aiService: AiService,
     private readonly gamificationService: GamificationService,
+    private readonly prisma: PrismaService,
   ) {
     const token = process.env.TELEGRAM_BOT_TOKEN;
 
@@ -97,6 +102,28 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
 
       throw error;
     }
+  }
+
+  private async startQuiz(ctx: BotContext, test: any) {
+    ctx.session ??= {};
+    ctx.session.step = 'quiz';
+    ctx.session.currentTestId = test.id;
+    ctx.session.currentQuestionIndex = 0;
+    ctx.session.quizScore = 0;
+
+    await ctx.reply(`✍️ *Начинаем тест: ${test.title}*\n\nОтвечайте на вопросы, выбирая варианты ниже.`, { parse_mode: 'Markdown' });
+    await this.askQuestion(ctx, test.questions[0]);
+  }
+
+  private async askQuestion(ctx: BotContext, question: any) {
+    const buttons = question.answers.map((a: any) => [a.text]);
+    await ctx.reply(
+      `❓ *Вопрос ${ctx.session?.currentQuestionIndex! + 1}:*\n\n${question.text}`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.keyboard([...buttons, ['Прервать тест']]).resize(),
+      }
+    );
   }
 
   private async safeCreateOrUpdateUser(params: {
@@ -268,6 +295,20 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       await ctx.reply('Главное меню:', this.getMainMenuKeyboard());
     });
 
+    this.bot.hears('✍️ Пройти тест', async (ctx) => {
+      ctx.session ??= {};
+      const lessonId = ctx.session.currentLessonId;
+      const lessons = await this.safeListLessons(this.getProjectId());
+      const lesson = lessons.find(l => l.id === lessonId);
+
+      if (!lesson || !lesson.tests || lesson.tests.length === 0) {
+        await ctx.reply('К этому уроку пока нет теста.');
+        return;
+      }
+
+      await this.startQuiz(ctx, lesson.tests[0]);
+    });
+
     this.bot.hears('📖 Изучить теорию', async (ctx) => {
       ctx.session ??= {};
       const lessonId = ctx.session.currentLessonId;
@@ -317,10 +358,16 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
         }
       }
 
+      // Fetch the specific lesson to get its aiPrompt
+      const lessons = await this.safeListLessons(projectId);
+      const lesson = lessons.find(l => l.id === lessonId) as any;
       const persona = projectId ? await this.aiService.getProjectContext(projectId) : null;
+      
       let prompt = 'Ты клиент компании. Веди себя реалистично, задавай вопросы, задавай возражения. Пользователь - менеджер продаж.';
       
-      if (persona?.prompt) {
+      if (lesson?.aiPrompt) {
+        prompt = lesson.aiPrompt;
+      } else if (persona?.prompt) {
         prompt = persona.prompt;
       }
 
@@ -355,6 +402,29 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       
       if (user && evaluation.score > 0) {
         await this.gamificationService.awardPoints(user.id, evaluation.score, `Завершение ИИ тренировки с баллом ${evaluation.score}`);
+        
+        // Update LessonProgress
+        if (ctx.session.currentLessonId) {
+          await this.prisma.lessonProgress.upsert({
+            where: {
+              userId_lessonId: {
+                userId: user.id,
+                lessonId: ctx.session.currentLessonId,
+              },
+            },
+            update: {
+              status: 'completed',
+              score: evaluation.score,
+            },
+            create: {
+              userId: user.id,
+              lessonId: ctx.session.currentLessonId,
+              status: 'completed',
+              score: evaluation.score,
+            },
+          });
+        }
+        
         replyMsg += `\n\n🏆 Заработано ${evaluation.score} баллов!`;
       }
 
@@ -446,31 +516,114 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       // Проверяем, не является ли сообщение названием урока
       const projectId2 = this.getProjectId();
       const lessons = await this.safeListLessons(projectId2);
-      const selectedLesson = lessons.find((lesson) => lesson.title === text);
+      const selectedLesson = lessons.find((lesson) => lesson.title === text) as any;
 
       if (selectedLesson) {
         ctx.session ??= {};
         ctx.session.currentLessonId = selectedLesson.id;
 
-        const lessonText =
-          selectedLesson.description ||
-          'Содержимое урока пока не заполнено.';
+        const theoryText = selectedLesson.description || 'Содержимое урока пока не заполнено.';
+        
+        let message = `📘 *${selectedLesson.title}*\n\n${theoryText}`;
+        if (selectedLesson.videoUrl) {
+          message += `\n\n📺 *Смотреть видео:* ${selectedLesson.videoUrl}`;
+        }
 
-        await ctx.reply(
-          [
-            `📘 ${selectedLesson.title}`,
-            '',
-            lessonText,
-            '',
-            'Нажмите "📖 Изучить теорию", чтобы ознакомиться с материалом.',
-            'Затем выберите "🤖 Тренировка с ИИ", чтобы отработать это на практике.',
-          ].join('\n'),
-          Markup.keyboard([
-            ['📖 Изучить теорию', '🤖 Тренировка с ИИ'],
-            ['📚 Мои уроки', 'Назад в меню'],
-          ]).resize(),
-        );
+        const buttons: string[][] = [];
+        if (selectedLesson.tests && selectedLesson.tests.length > 0) {
+          buttons.push(['✍️ Пройти тест']);
+        } else {
+          buttons.push(['🤖 Тренировка с ИИ']);
+        }
+        buttons.push(['📚 Мои уроки', 'Назад в меню']);
+
+        await ctx.reply(message, {
+          parse_mode: 'Markdown',
+          ...Markup.keyboard(buttons).resize(),
+        });
         return;
+      }
+
+      // Обработка ответов на тест
+      if (ctx.session?.step === 'quiz') {
+        const lessonId = ctx.session.currentLessonId;
+        const lessons = await this.safeListLessons(this.getProjectId());
+        const lesson = lessons.find(l => l.id === lessonId);
+        const test = lesson?.tests?.find(t => t.id === ctx.session?.currentTestId);
+        
+        if (text === 'Прервать тест') {
+          ctx.session.step = undefined;
+          await ctx.reply('Тест прерван.', this.getMainMenuKeyboard());
+          return;
+        }
+
+        if (test) {
+          const currentQuestion = test.questions[ctx.session.currentQuestionIndex!];
+          const selectedAnswer = currentQuestion.answers.find((a: any) => a.text === text);
+
+          if (selectedAnswer) {
+            if (selectedAnswer.isCorrect) {
+              ctx.session.quizScore! += currentQuestion.points || 10;
+              await ctx.reply('✅ Верно!');
+            } else {
+              const correct = currentQuestion.answers.find((a: any) => a.isCorrect);
+              await ctx.reply(`❌ Неверно. Правильный ответ: ${correct?.text || '—'}`);
+            }
+
+            ctx.session.currentQuestionIndex!++;
+
+            if (ctx.session.currentQuestionIndex! < test.questions.length) {
+              await this.askQuestion(ctx, test.questions[ctx.session.currentQuestionIndex!]);
+            } else {
+              // Тест завершен
+              const totalPossible = test.questions.reduce((sum: number, q: any) => sum + (q.points || 10), 0);
+              const percent = Math.round((ctx.session.quizScore! / totalPossible) * 100);
+              const passed = percent >= (test.passingScore || 80);
+
+              let finishMsg = `🏁 *Тест завершен!*\nВаш результат: ${percent}%\n`;
+              
+              if (passed) {
+                finishMsg += `🎉 Поздравляем! Вы успешно сдали текст и можете переходить к практике.`;
+                const telegramId = String(ctx.from?.id);
+                const user = await this.safeFindUser(this.getProjectId(), telegramId);
+                if (user && lessonId) {
+                  await this.gamificationService.awardPoints(user.id, 20, `Сдача теста к уроку: ${lesson?.title}`);
+                  
+                  // Record progress
+                  await this.prisma.lessonProgress.upsert({
+                    where: {
+                      userId_lessonId: {
+                        userId: user.id,
+                        lessonId: lessonId,
+                      },
+                    },
+                    update: {
+                      score: percent,
+                    },
+                    create: {
+                      userId: user.id,
+                      lessonId: lessonId,
+                      status: 'started',
+                      score: percent,
+                    },
+                  });
+                }
+              } else {
+                finishMsg += `⚠️ К сожалению, этого недостаточно для прохождения (нужно ${test.passingScore || 80}%). Попробуйте еще раз!`;
+              }
+
+              const buttons = passed ? [['🤖 Тренировка с ИИ']] : [['✍️ Пройти тест']];
+              buttons.push(['📚 Мои уроки', 'Назад в меню']);
+
+              ctx.session.step = undefined;
+              await ctx.reply(finishMsg, {
+                parse_mode: 'Markdown',
+                ...Markup.keyboard(buttons).resize(),
+              });
+            }
+            return;
+          }
+        }
       }
 
       // Иначе передаем сообщение дальше

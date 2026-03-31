@@ -29,9 +29,8 @@ export class GamificationService {
     return aggregate._sum.amount || 0;
   }
 
-  async getLeaderboard(projectId?: string, limit: number = 10) {
+  async getLeaderboard(limit: number = 10) {
     const users = await this.prisma.user.findMany({
-      where: projectId ? { projectId } : undefined,
       select: {
         id: true,
         name: true,

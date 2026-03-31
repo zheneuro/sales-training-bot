@@ -31,11 +31,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
   ) {
     const token = process.env.TELEGRAM_BOT_TOKEN;
-
-    if (!token) {
-      throw new Error('TELEGRAM_BOT_TOKEN is not set');
-    }
-
+    if (!token) throw new Error('TELEGRAM_BOT_TOKEN is not set');
     this.bot = new Telegraf<BotContext>(token);
   }
 
@@ -46,18 +42,13 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     if (process.env.NODE_ENV !== 'production') {
       void this.bot
         .launch()
-        .then(() => {
-          this.logger.log('Telegram bot started (polling)');
-        })
-        .catch((error) => {
-          this.logger.error('Telegram bot failed to start', error);
-        });
+        .then(() => this.logger.log('Telegram bot started (polling)'))
+        .catch((error) => this.logger.error('Telegram bot failed to start', error));
     } else {
       this.logger.log('Telegram bot ready (webhook mode)');
     }
   }
 
-  // Handle updates from Vercel/Webhooks
   async handleUpdate(update: any) {
     return this.bot.handleUpdate(update);
   }
@@ -74,43 +65,8 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   private getMainMenuKeyboard() {
     return Markup.keyboard([
       ['📚 Мои уроки', '🎓 Мой профиль'],
-      ['🏆 Рейтинг', 'Помощь']
+      ['🏆 Рейтинг', 'Помощь'],
     ]).resize();
-  }
-
-  private getProjectId(): string | undefined {
-    const value = process.env.PROJECT_ID;
-    return value && value.trim() ? value : undefined;
-  }
-
-  private isNoActiveProjectError(error: unknown): boolean {
-    return error instanceof Error && error.message.includes('No active project found');
-  }
-
-  private async safeListLessons(projectId: string | undefined) {
-    try {
-      return await this.lessonsService.listPublished(projectId);
-    } catch (error) {
-      if (this.isNoActiveProjectError(error)) {
-        this.logger.warn('No active project found while loading lessons. Falling back to unscoped lessons.');
-        return this.lessonsService.listPublished(undefined);
-      }
-
-      throw error;
-    }
-  }
-
-  private async safeFindUser(projectId: string | undefined, telegramId: string) {
-    try {
-      return await this.usersService.findByTelegramId(projectId, telegramId);
-    } catch (error) {
-      if (this.isNoActiveProjectError(error)) {
-        this.logger.warn('No active project found while loading profile. Falling back to legacy user lookup.');
-        return this.usersService.findByTelegramId(undefined, telegramId);
-      }
-
-      throw error;
-    }
   }
 
   private async startQuiz(ctx: BotContext, test: any) {
@@ -120,7 +76,10 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     ctx.session.currentQuestionIndex = 0;
     ctx.session.quizScore = 0;
 
-    await ctx.reply(`✍️ *Начинаем тест: ${test.title}*\n\nОтвечайте на вопросы, выбирая варианты ниже.`, { parse_mode: 'Markdown' });
+    await ctx.reply(
+      `✍️ *Начинаем тест: ${test.title}*\n\nОтвечайте на вопросы, выбирая варианты ниже.`,
+      { parse_mode: 'Markdown' },
+    );
     await this.askQuestion(ctx, test.questions[0]);
   }
 
@@ -131,36 +90,14 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       {
         parse_mode: 'Markdown',
         ...Markup.keyboard([...buttons, ['Прервать тест']]).resize(),
-      }
+      },
     );
-  }
-
-  private async safeCreateOrUpdateUser(params: {
-    projectId?: string;
-    telegramId: string;
-    name?: string;
-    role?: string;
-  }) {
-    try {
-      return await this.usersService.createOrUpdateByTelegramId(params);
-    } catch (error) {
-      if (this.isNoActiveProjectError(error)) {
-        this.logger.warn('No active project found while registering user. Falling back to legacy user upsert.');
-        return this.usersService.createOrUpdateByTelegramId({
-          ...params,
-          projectId: undefined,
-        });
-      }
-
-      throw error;
-    }
   }
 
   @Cron(CronExpression.EVERY_DAY_AT_6PM)
   async sendStreakReminders() {
     this.logger.log('Running daily streak reminder cron job...');
-    
-    // 1. Users at risk of losing their streak
+
     const atRiskUsers = await this.gamificationService.getUsersAtRiskOfLosingStreak();
     for (const user of atRiskUsers) {
       if (user.telegramId) {
@@ -168,7 +105,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
           await this.bot.telegram.sendMessage(
             user.telegramId,
             `🔥 *Твой прогресс сгорит!* Ты занимался ${user.currentStreak} дней подряд.\nЗайди потренироваться хотя бы на 5 минут, чтобы не потерять прогресс!`,
-            { parse_mode: 'Markdown', ...this.getMainMenuKeyboard() }
+            { parse_mode: 'Markdown', ...this.getMainMenuKeyboard() },
           );
         } catch (err) {
           this.logger.error(`Failed to send streak reminder to ${user.telegramId}`, err);
@@ -176,20 +113,15 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    // 2. Inactive users (nudge them to start)
     const inactiveUsers = await this.gamificationService.getInactiveUsers();
     for (const user of inactiveUsers) {
-      if (user.telegramId) {
+      if (user.telegramId && Math.random() > 0.5) {
         try {
-          // Add some randomness to not spam users every single day at the exact same time
-          // Or we can just send it. Let's send a gentle nudge!
-          if (Math.random() > 0.5) {
-            await this.bot.telegram.sendMessage(
-              user.telegramId,
-              `👋 Привет, ${user.name || 'друг'}! Давно не виделись.\nИИ-клиенты ждут, когда ты проведешь с ними тренировку! Сможешь выделить 10 минут сегодня?`,
-              this.getMainMenuKeyboard()
-            );
-          }
+          await this.bot.telegram.sendMessage(
+            user.telegramId,
+            `👋 Привет, ${user.name || 'друг'}! Давно не виделись.\nИИ-клиенты ждут, когда ты проведешь с ними тренировку! Сможешь выделить 10 минут сегодня?`,
+            this.getMainMenuKeyboard(),
+          );
         } catch (err) {
           this.logger.error(`Failed to send nudge to ${user.telegramId}`, err);
         }
@@ -199,15 +131,10 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
 
   private registerHandlers() {
     this.bot.start(async (ctx) => {
-      // Инициализируем сессию, если её нет
       ctx.session ??= {};
-      
       const telegramId = String(ctx.from.id);
-      const projectId = this.getProjectId();
-      
-      // Проверяем, зарегистрирован ли уже пользователь
-      const existingUser = await this.safeFindUser(projectId, telegramId);
-      
+      const existingUser = await this.usersService.findByTelegramId(telegramId);
+
       if (existingUser && existingUser.name) {
         await ctx.reply(
           `С возвращением, ${existingUser.name}! 👋\nВы уже зарегистрированы в системе. Выберите нужное действие в меню.`,
@@ -216,31 +143,25 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
-      // Если новый - запускаем онбординг
       ctx.session.step = 'awaiting_name';
-      
       await ctx.reply(
         'Добро пожаловать в платформу обучения SalesTrain AI! 🎓\n\nДавайте познакомимся, чтобы ваш руководитель мог видеть ваши успехи.\n\n*Как вас зовут?* (Введите Имя и Фамилию)',
-        { parse_mode: 'Markdown' }
+        { parse_mode: 'Markdown' },
       );
     });
 
     this.bot.hears('🎓 Мой профиль', async (ctx) => {
       const telegramId = String(ctx.from.id);
-      const projectId = this.getProjectId();
-      const user = await this.safeFindUser(projectId, telegramId);
+      const user = await this.usersService.findByTelegramId(telegramId);
 
       if (!user) {
         await ctx.reply('Профиль не найден. Нажмите /start для регистрации.');
         return;
       }
 
-      // Track activity to ensure streaks are up to date
       await this.gamificationService.trackUserActivity(user.id);
-
       const totalPoints = await this.gamificationService.getUserTotalPoints(user.id);
-      // Fetch user again to get updated streak
-      const updatedUser = await this.safeFindUser(projectId, telegramId);
+      const updatedUser = await this.usersService.findByTelegramId(telegramId);
 
       await ctx.reply(
         `Твой профиль:\n` +
@@ -253,8 +174,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     });
 
     this.bot.hears('🏆 Рейтинг', async (ctx) => {
-      const projectId = this.getProjectId();
-      const topUsers = await this.gamificationService.getLeaderboard(projectId, 10);
+      const topUsers = await this.gamificationService.getLeaderboard(10);
 
       if (!topUsers || topUsers.length === 0) {
         return ctx.reply('Рейтинг пока пуст. Будьте первым, кто заработает баллы!');
@@ -273,8 +193,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     });
 
     this.bot.hears('📚 Мои уроки', async (ctx) => {
-      const projectId = this.getProjectId();
-      const lessons = await this.safeListLessons(projectId);
+      const lessons = await this.lessonsService.listPublished();
 
       if (!lessons.length) {
         await ctx.reply('Пока нет доступных уроков. Ваш руководитель скоро их добавит.');
@@ -290,14 +209,9 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
           '',
           'Нажми на название урока кнопкой ниже.',
         ].join('\n'),
-        Markup.keyboard([
-          ...lessonButtons,
-          ['Назад в меню'],
-        ]).resize(),
+        Markup.keyboard([...lessonButtons, ['Назад в меню']]).resize(),
       );
     });
-
-
 
     this.bot.hears('Назад в меню', async (ctx) => {
       if (ctx.session) ctx.session.step = undefined;
@@ -307,8 +221,8 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     this.bot.hears('✍️ Пройти тест', async (ctx) => {
       ctx.session ??= {};
       const lessonId = ctx.session.currentLessonId;
-      const lessons = await this.safeListLessons(this.getProjectId());
-      const lesson = lessons.find(l => l.id === lessonId);
+      const lessons = await this.lessonsService.listPublished();
+      const lesson = lessons.find((l) => l.id === lessonId);
 
       if (!lesson || !lesson.tests || lesson.tests.length === 0) {
         await ctx.reply('К этому уроку пока нет теста.');
@@ -321,37 +235,33 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     this.bot.hears('📖 Изучить теорию', async (ctx) => {
       ctx.session ??= {};
       const lessonId = ctx.session.currentLessonId;
-      const projectId = this.getProjectId();
 
       if (!lessonId) {
         await ctx.reply('Сначала выберите урок из меню "📚 Мои уроки".');
         return;
       }
 
-      const lessons = await this.safeListLessons(projectId);
+      const lessons = await this.lessonsService.listPublished();
       const selectedLesson = lessons.find((l) => l.id === lessonId);
+      if (!selectedLesson) return;
 
-      if (!selectedLesson) {
-        return;
-      }
-
-      // To make it more detailed, we could fetch blocks.
-      // But for now, we have the description text as theory or the content if we add it. 
       const theoryContent = selectedLesson.description || 'Теоретический материал для этого урока еще готовится.';
-      
+
       await ctx.reply(
         `📚 *Теоретическая часть*\n\n${theoryContent}\n\nТеперь вы готовы к практике?`,
-        { parse_mode: 'Markdown', ...Markup.keyboard([
-          ['🤖 Тренировка с ИИ'],
-          ['📚 Мои уроки', 'Назад в меню'],
-        ]).resize() }
+        {
+          parse_mode: 'Markdown',
+          ...Markup.keyboard([
+            ['🤖 Тренировка с ИИ'],
+            ['📚 Мои уроки', 'Назад в меню'],
+          ]).resize(),
+        },
       );
     });
 
     this.bot.hears('🤖 Тренировка с ИИ', async (ctx) => {
       ctx.session ??= {};
       const lessonId = ctx.session.currentLessonId;
-      const projectId = this.getProjectId();
 
       if (!lessonId) {
         await ctx.reply('Сначала выберите урок из меню "📚 Мои уроки".');
@@ -359,7 +269,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       }
 
       const telegramId = String(ctx.from.id);
-      const user = await this.safeFindUser(projectId, telegramId);
+      const user = await this.usersService.findByTelegramId(telegramId);
       if (user) {
         const activity = await this.gamificationService.trackUserActivity(user.id);
         if (activity && activity.streakMessage) {
@@ -367,13 +277,13 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
         }
       }
 
-      // Fetch the specific lesson to get its aiPrompt
-      const lessons = await this.safeListLessons(projectId);
-      const lesson = lessons.find(l => l.id === lessonId) as any;
-      const persona = projectId ? await this.aiService.getProjectContext(projectId) : null;
-      
-      let prompt = 'Ты клиент компании. Веди себя реалистично, задавай вопросы, задавай возражения. Пользователь - менеджер продаж.';
-      
+      const lessons = await this.lessonsService.listPublished();
+      const lesson = lessons.find((l) => l.id === lessonId) as any;
+      const persona = await this.aiService.getDefaultPersona();
+
+      let prompt =
+        'Ты клиент компании. Веди себя реалистично, задавай вопросы, задавай возражения. Пользователь - менеджер продаж.';
+
       if (lesson?.aiPrompt) {
         prompt = lesson.aiPrompt;
       } else if (persona?.prompt) {
@@ -381,9 +291,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       }
 
       ctx.session.step = 'ai_practice';
-      ctx.session.aiContext = [
-        { role: 'system', content: prompt }
-      ];
+      ctx.session.aiContext = [{ role: 'system', content: prompt }];
 
       await ctx.reply(
         '🤖 Тренировка начата!\n\nИИ-клиент ждет вашего первого сообщения.\nВы можете отправлять текстовые или 🎤 *голосовые сообщения*.\n\nЧтобы завершить тренировку и получить оценку, нажмите "Завершить тренировку".\nПоздоровайтесь с клиентом:',
@@ -398,33 +306,28 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       }
 
       const messages = ctx.session.aiContext || [];
-      const projectId = this.getProjectId();
       const telegramId = String(ctx.from?.id);
-      
+
       await ctx.reply('⏳ Завершаем симуляцию и оцениваем ваш диалог... Пожалуйста, подождите.');
-      
-      const user = await this.safeFindUser(projectId, telegramId);
-      
-      const evaluation = await this.aiService.evaluateConversation(messages, projectId || '', user?.id);
-      
+
+      const user = await this.usersService.findByTelegramId(telegramId);
+      const evaluation = await this.aiService.evaluateConversation(messages, user?.id);
+
       let replyMsg = `📊 Результаты тренировки:\n\nОценка: ${evaluation.score} / 100\n\nОбратная связь от ИИ:\n${evaluation.feedback}`;
-      
+
       if (user && evaluation.score > 0) {
-        await this.gamificationService.awardPoints(user.id, evaluation.score, `Завершение ИИ тренировки с баллом ${evaluation.score}`);
-        
-        // Update LessonProgress
+        await this.gamificationService.awardPoints(
+          user.id,
+          evaluation.score,
+          `Завершение ИИ тренировки с баллом ${evaluation.score}`,
+        );
+
         if (ctx.session.currentLessonId) {
           await this.prisma.lessonProgress.upsert({
             where: {
-              userId_lessonId: {
-                userId: user.id,
-                lessonId: ctx.session.currentLessonId,
-              },
+              userId_lessonId: { userId: user.id, lessonId: ctx.session.currentLessonId },
             },
-            update: {
-              status: 'completed',
-              score: evaluation.score,
-            },
+            update: { status: 'completed', score: evaluation.score },
             create: {
               userId: user.id,
               lessonId: ctx.session.currentLessonId,
@@ -433,7 +336,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
             },
           });
         }
-        
+
         replyMsg += `\n\n🏆 Заработано ${evaluation.score} баллов!`;
       }
 
@@ -450,19 +353,16 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       );
     });
 
-    // Обработчик текстовых и голосовых сообщений
     this.bot.on('message', async (ctx, next) => {
       const msg = ctx.message as any;
       let text = msg.text;
 
-      // Если это голосовое сообщение в режиме тренировки с ИИ
       if (msg.voice && ctx.session?.step === 'ai_practice') {
         const fileId = msg.voice.file_id;
         try {
           await ctx.sendChatAction('typing');
           const fileLink = await ctx.telegram.getFileLink(fileId);
           text = await this.aiService.transcribeAudio(fileLink.toString());
-          
           await ctx.reply(`_Распознано:_ ${text}`, { parse_mode: 'Markdown' });
         } catch (err) {
           this.logger.error('Failed to transcribe voice', err);
@@ -476,14 +376,9 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       if (ctx.session?.step === 'awaiting_name') {
         const name = text;
         const telegramId = String(ctx.from.id);
-        const projectId = this.getProjectId();
-        
-        // Очищаем шаг
         ctx.session.step = undefined;
 
-        // Сохраняем пользователя в БД
-        const user = await this.safeCreateOrUpdateUser({
-          projectId,
+        const user = await this.usersService.createOrUpdateByTelegramId({
           telegramId,
           name,
           role: 'employee',
@@ -495,36 +390,26 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
         );
         return;
       }
-      
+
       if (ctx.session?.step === 'ai_practice') {
-        // Мы в режиме симуляции с ИИ
         ctx.session.aiContext ??= [];
         const userMsg = text;
-        
         ctx.session.aiContext.push({ role: 'user', content: userMsg });
 
-        const projectId = this.getProjectId();
         const telegramId = String(ctx.from.id);
-        const user = await this.safeFindUser(projectId, telegramId);
+        const user = await this.usersService.findByTelegramId(telegramId);
 
-        // Показываем индикатор печати
         await ctx.sendChatAction('typing');
 
-        const { reply } = await this.aiService.getChatReply(
-          ctx.session.aiContext,
-          projectId || '',
-          user?.id
-        );
+        const { reply } = await this.aiService.getChatReply(ctx.session.aiContext, user?.id);
 
         ctx.session.aiContext.push({ role: 'assistant', content: reply });
-
         await ctx.reply(reply);
         return;
       }
-      
-      // Проверяем, не является ли сообщение названием урока
-      const projectId2 = this.getProjectId();
-      const lessons = await this.safeListLessons(projectId2);
+
+      // Check if message is a lesson title
+      const lessons = await this.lessonsService.listPublished();
       const selectedLesson = lessons.find((lesson) => lesson.title === text) as any;
 
       if (selectedLesson) {
@@ -532,7 +417,6 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
         ctx.session.currentLessonId = selectedLesson.id;
 
         const theoryText = selectedLesson.description || 'Содержимое урока пока не заполнено.';
-        
         let message = `📘 *${selectedLesson.title}*\n\n${theoryText}`;
         if (selectedLesson.videoUrl) {
           message += `\n\n📺 *Смотреть видео:* ${selectedLesson.videoUrl}`;
@@ -553,13 +437,13 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
-      // Обработка ответов на тест
+      // Quiz answer handling
       if (ctx.session?.step === 'quiz') {
         const lessonId = ctx.session.currentLessonId;
-        const lessons = await this.safeListLessons(this.getProjectId());
-        const lesson = lessons.find(l => l.id === lessonId);
-        const test = lesson?.tests?.find(t => t.id === ctx.session?.currentTestId);
-        
+        const lessons2 = await this.lessonsService.listPublished();
+        const lesson = lessons2.find((l) => l.id === lessonId);
+        const test = lesson?.tests?.find((t) => t.id === ctx.session?.currentTestId);
+
         if (text === 'Прервать тест') {
           ctx.session.step = undefined;
           await ctx.reply('Тест прерван.', this.getMainMenuKeyboard());
@@ -584,34 +468,33 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
             if (ctx.session.currentQuestionIndex! < test.questions.length) {
               await this.askQuestion(ctx, test.questions[ctx.session.currentQuestionIndex!]);
             } else {
-              // Тест завершен
-              const totalPossible = test.questions.reduce((sum: number, q: any) => sum + (q.points || 10), 0);
+              const totalPossible = test.questions.reduce(
+                (sum: number, q: any) => sum + (q.points || 10),
+                0,
+              );
               const percent = Math.round((ctx.session.quizScore! / totalPossible) * 100);
               const passed = percent >= (test.passingScore || 80);
 
               let finishMsg = `🏁 *Тест завершен!*\nВаш результат: ${percent}%\n`;
-              
+
               if (passed) {
-                finishMsg += `🎉 Поздравляем! Вы успешно сдали текст и можете переходить к практике.`;
+                finishMsg += `🎉 Поздравляем! Вы успешно сдали тест и можете переходить к практике.`;
                 const telegramId = String(ctx.from?.id);
-                const user = await this.safeFindUser(this.getProjectId(), telegramId);
+                const user = await this.usersService.findByTelegramId(telegramId);
                 if (user && lessonId) {
-                  await this.gamificationService.awardPoints(user.id, 20, `Сдача теста к уроку: ${lesson?.title}`);
-                  
-                  // Record progress
+                  await this.gamificationService.awardPoints(
+                    user.id,
+                    20,
+                    `Сдача теста к уроку: ${lesson?.title}`,
+                  );
                   await this.prisma.lessonProgress.upsert({
                     where: {
-                      userId_lessonId: {
-                        userId: user.id,
-                        lessonId: lessonId,
-                      },
+                      userId_lessonId: { userId: user.id, lessonId },
                     },
-                    update: {
-                      score: percent,
-                    },
+                    update: { score: percent },
                     create: {
                       userId: user.id,
-                      lessonId: lessonId,
+                      lessonId,
                       status: 'started',
                       score: percent,
                     },
@@ -635,7 +518,6 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
         }
       }
 
-      // Иначе передаем сообщение дальше
       return next();
     });
   }

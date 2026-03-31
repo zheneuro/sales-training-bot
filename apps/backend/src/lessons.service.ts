@@ -7,161 +7,74 @@ export class LessonsService {
 
   private get defaultInclude() {
     return {
-      blocks: {
-        orderBy: {
-          order: 'asc' as const,
-        },
-      },
+      blocks: { orderBy: { order: 'asc' as const } },
       tests: {
         include: {
           questions: {
-            include: {
-              answers: true,
-            },
+            include: { answers: true },
           },
         },
       },
     };
   }
 
-  async listPublished(projectId?: string) {
-    if (projectId) {
-      const scopedLessons = await this.prisma.lesson.findMany({
-        where: {
-          projectId,
-          isPublished: true,
-        },
-        orderBy: {
-          order: 'asc',
-        },
-        include: this.defaultInclude,
-      });
-
-      if (scopedLessons.length > 0) {
-        return scopedLessons;
-      }
-
-      return this.prisma.lesson.findMany({
-        where: {
-          projectId: null,
-          isPublished: true,
-        },
-        orderBy: {
-          order: 'asc',
-        },
-        include: this.defaultInclude,
-      });
-    }
-
+  async listPublished() {
     return this.prisma.lesson.findMany({
-      where: {
-        isPublished: true,
-      },
-      orderBy: {
-        order: 'asc',
-      },
-      include: this.defaultInclude,
-    });
-  }
-
-  async findByTitle(projectId: string | undefined, title: string) {
-    if (projectId) {
-      const scopedLesson = await this.prisma.lesson.findFirst({
-        where: {
-          projectId,
-          title,
-          isPublished: true,
-        },
-        include: this.defaultInclude,
-      });
-
-      if (scopedLesson) {
-        return scopedLesson;
-      }
-
-      return this.prisma.lesson.findFirst({
-        where: {
-          projectId: null,
-          title,
-          isPublished: true,
-        },
-        include: this.defaultInclude,
-      });
-    }
-
-    return this.prisma.lesson.findFirst({
-      where: {
-        title,
-        isPublished: true,
-      },
-      include: this.defaultInclude,
-    });
-  }
-
-  async findByCode(projectId: string | undefined, code: string) {
-    if (projectId) {
-      const scopedLesson = await this.prisma.lesson.findFirst({
-        where: {
-          projectId,
-          code,
-          isPublished: true,
-        },
-        include: this.defaultInclude,
-      });
-
-      if (scopedLesson) {
-        return scopedLesson;
-      }
-
-      return this.prisma.lesson.findFirst({
-        where: {
-          projectId: null,
-          code,
-          isPublished: true,
-        },
-        include: this.defaultInclude,
-      });
-    }
-
-    return this.prisma.lesson.findFirst({
-      where: {
-        code,
-        isPublished: true,
-      },
-      include: this.defaultInclude,
-    });
-  }
-
-  async listAll(projectId?: string) {
-    return this.prisma.lesson.findMany({
-      where: projectId ? { projectId } : undefined,
+      where: { isPublished: true },
       orderBy: { order: 'asc' },
       include: this.defaultInclude,
     });
   }
 
-  async create(projectId: string | undefined, data: { title: string; code: string; description?: string; order: number; isPublished: boolean; videoUrl?: string; aiPrompt?: string }) {
-    if (!projectId) {
-      throw new Error('Project ID is required to create a lesson');
-    }
-    return this.prisma.lesson.create({
-      data: {
-        ...data,
-        projectId,
-      },
+  async listAll() {
+    return this.prisma.lesson.findMany({
+      orderBy: { order: 'asc' },
+      include: this.defaultInclude,
     });
   }
 
-  async update(id: string, data: { title?: string; code?: string; description?: string; order?: number; isPublished?: boolean; videoUrl?: string; aiPrompt?: string }) {
-    return this.prisma.lesson.update({
-      where: { id },
-      data,
+  async findByTitle(title: string) {
+    return this.prisma.lesson.findFirst({
+      where: { title, isPublished: true },
+      include: this.defaultInclude,
     });
+  }
+
+  async findByCode(code: string) {
+    return this.prisma.lesson.findFirst({
+      where: { code, isPublished: true },
+      include: this.defaultInclude,
+    });
+  }
+
+  async create(data: {
+    title: string;
+    code: string;
+    description?: string;
+    order: number;
+    isPublished: boolean;
+    videoUrl?: string;
+    aiPrompt?: string;
+  }) {
+    return this.prisma.lesson.create({ data });
+  }
+
+  async update(
+    id: string,
+    data: {
+      title?: string;
+      code?: string;
+      description?: string;
+      order?: number;
+      isPublished?: boolean;
+      videoUrl?: string;
+      aiPrompt?: string;
+    },
+  ) {
+    return this.prisma.lesson.update({ where: { id }, data });
   }
 
   async delete(id: string) {
-    return this.prisma.lesson.delete({
-      where: { id },
-    });
+    return this.prisma.lesson.delete({ where: { id } });
   }
 }

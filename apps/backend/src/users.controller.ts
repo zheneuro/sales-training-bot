@@ -12,7 +12,7 @@ export class UsersController {
 
   @Get(':telegramId')
   async getByTelegramId(@Param('telegramId') telegramId: string) {
-    const user = await this.usersService.findByTelegramId(undefined, telegramId);
+    const user = await this.usersService.findByTelegramId(telegramId);
 
     if (!user) {
       return {

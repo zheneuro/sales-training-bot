@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import OpenAI, { toFile } from 'openai';
 
+const DEFAULT_PROJECT_ID = 'default';
+
 @Injectable()
 export class AiService {
   private openai: OpenAI;
@@ -14,7 +16,6 @@ export class AiService {
   }
 
   async logTransaction(data: {
-    projectId: string;
     userId?: string;
     promptTokens: number;
     completionTokens: number;
@@ -23,22 +24,22 @@ export class AiService {
     model: string;
   }) {
     return this.prisma.aIChatTransaction.create({
-      data,
+      data: { ...data, projectId: DEFAULT_PROJECT_ID },
     });
   }
 
-  async getProjectContext(projectId: string) {
+  async getDefaultPersona() {
     return this.prisma.aIPersona.findUnique({
-      where: { projectId },
+      where: { projectId: DEFAULT_PROJECT_ID },
     });
   }
 
-  async getChatReply(messages: any[], projectId: string, userId?: string) {
+  async getChatReply(messages: any[], userId?: string) {
     if (!process.env.OPENAI_API_KEY) {
       this.logger.warn('OPENAI_API_KEY is not set, returning dummy AI response.');
       return {
         reply: 'Это тестовый ответ ИИ (API ключ не настроен). Продолжайте тренировку.',
-        tokens: { prompt: 10, completion: 15, total: 25 }
+        tokens: { prompt: 10, completion: 15, total: 25 },
       };
     }
 
@@ -51,9 +52,8 @@ export class AiService {
       const reply = response.choices[0].message?.content || 'Нет ответа от ИИ.';
       const usage = response.usage;
 
-      if (usage && projectId) {
+      if (usage) {
         await this.logTransaction({
-          projectId,
           userId,
           promptTokens: usage.prompt_tokens,
           completionTokens: usage.completion_tokens,
@@ -64,18 +64,22 @@ export class AiService {
 
       return {
         reply,
-        tokens: { prompt: usage?.prompt_tokens, completion: usage?.completion_tokens, total: usage?.total_tokens }
+        tokens: {
+          prompt: usage?.prompt_tokens,
+          completion: usage?.completion_tokens,
+          total: usage?.total_tokens,
+        },
       };
     } catch (e: any) {
       this.logger.error('Error calling OpenAI', e.stack);
       return {
         reply: 'Извините, сейчас я (ИИ) недоступен. Возникла ошибка связи с сервером.',
-        tokens: { prompt: 0, completion: 0, total: 0 }
+        tokens: { prompt: 0, completion: 0, total: 0 },
       };
     }
   }
 
-  async evaluateConversation(messages: any[], projectId: string, userId?: string) {
+  async evaluateConversation(messages: any[], userId?: string) {
     if (!process.env.OPENAI_API_KEY) {
       return { score: 85, feedback: 'Хорошая тренировка! (Тестовая оценка)' };
     }
@@ -85,20 +89,20 @@ export class AiService {
         ...messages,
         {
           role: 'system',
-          content: 'Оцени диалог выше. Ты выступал в роли клиента, а пользователь - менеджера по продажам. Насколько хорошо менеджер отработал возражения и продал продукт? Ответь строго в формате JSON: {"score": <число от 0 до 100>, "feedback": "<строка с коротким фидбеком на русском>"}'
-        }
+          content:
+            'Оцени диалог выше. Ты выступал в роли клиента, а пользователь - менеджера по продажам. Насколько хорошо менеджер отработал возражения и продал продукт? Ответь строго в формате JSON: {"score": <число от 0 до 100>, "feedback": "<строка с коротким фидбеком на русском>"}',
+        },
       ];
 
       const response = await this.openai.chat.completions.create({
         model: 'gpt-4o-mini',
         messages: evalMessages as any,
-        response_format: { type: 'json_object' }
+        response_format: { type: 'json_object' },
       });
 
       const usage = response.usage;
-      if (usage && projectId) {
+      if (usage) {
         await this.logTransaction({
-          projectId,
           userId,
           promptTokens: usage.prompt_tokens,
           completionTokens: usage.completion_tokens,
@@ -117,15 +121,13 @@ export class AiService {
 
   async transcribeAudio(fileUrl: string) {
     if (!process.env.OPENAI_API_KEY) {
-      return "Это тестовое распознавание голоса (API ключ не настроен).";
+      return 'Это тестовое распознавание голоса (API ключ не настроен).';
     }
 
     try {
       const response = await fetch(fileUrl);
       const arrayBuffer = await response.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
-      
-      // OpenAI requires a named file-like object for audio transcriptions
       const file = await toFile(buffer, 'audio.ogg');
 
       const transcription = await this.openai.audio.transcriptions.create({
@@ -136,7 +138,7 @@ export class AiService {
       return transcription.text;
     } catch (e: any) {
       this.logger.error('Error transcribing audio', e.stack);
-      return "[Голосовое сообщение не распознано: ошибка сервера]";
+      return '[Голосовое сообщение не распознано: ошибка сервера]';
     }
   }
 }

@@ -5,87 +5,63 @@ import { PrismaService } from '../prisma.service';
 export class AdminService {
   constructor(private prisma: PrismaService) {}
 
-  async getDashboardStats(projectId?: string) {
-    const whereProjectId = projectId ? { projectId } : {};
-
+  async getDashboardStats() {
     const [
       totalEmployees,
       activeLessons,
       lessonProgressStats,
-      aiTokenStats
+      aiTokenStats,
     ] = await Promise.all([
-      // Total Employees
-      this.prisma.user.count({ where: whereProjectId }),
-      
-      // Active Lessons
-      this.prisma.lesson.count({
-        where: { ...whereProjectId, isPublished: true },
-      }),
-
-      // Avg Score (from completed lessons)
+      this.prisma.user.count(),
+      this.prisma.lesson.count({ where: { isPublished: true } }),
       this.prisma.lessonProgress.aggregate({
-        where: {
-          status: 'completed',
-          score: { not: null },
-          user: whereProjectId
-        },
-        _avg: { score: true }
+        where: { status: 'completed', score: { not: null } },
+        _avg: { score: true },
       }),
-
-      // AI Tokens Spent
       this.prisma.aIChatTransaction.aggregate({
-        where: whereProjectId,
-        _sum: { totalTokens: true }
-      })
+        _sum: { totalTokens: true },
+      }),
     ]);
 
-    // Recent progress (limit 5)
     const recentProgressQuery = await this.prisma.lessonProgress.findMany({
-      where: { user: whereProjectId },
       orderBy: { updatedAt: 'desc' },
       take: 5,
       include: {
         user: { select: { name: true, telegramId: true } },
-        lesson: { select: { title: true } }
-      }
+        lesson: { select: { title: true } },
+      },
     });
 
-    const recentProgress = recentProgressQuery.map(p => ({
+    const recentProgress = recentProgressQuery.map((p) => ({
       employeeName: p.user.name || p.user.telegramId,
       lessonTitle: p.lesson.title,
       status: p.status,
-      score: p.score
+      score: p.score,
     }));
 
     return {
       stats: {
         totalEmployees,
         activeLessons,
-        avgScore: lessonProgressStats._avg.score ? Math.round(lessonProgressStats._avg.score) : 0,
-        aiTokensSpent: aiTokenStats._sum.totalTokens || 0
+        avgScore: lessonProgressStats._avg.score
+          ? Math.round(lessonProgressStats._avg.score)
+          : 0,
+        aiTokensSpent: aiTokenStats._sum.totalTokens || 0,
       },
-      recentProgress
+      recentProgress,
     };
   }
 
-  async getUsers(projectId?: string) {
-    const whereProjectId = projectId ? { projectId } : {};
-    
+  async getUsers() {
     const users = await this.prisma.user.findMany({
-      where: whereProjectId,
       include: {
-        points: {
-          select: { amount: true }
-        },
-        progress: {
-          where: { status: 'completed' },
-          select: { id: true }
-        }
+        points: { select: { amount: true } },
+        progress: { where: { status: 'completed' }, select: { id: true } },
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
     });
 
-    return users.map(user => {
+    return users.map((user) => {
       const totalPoints = user.points.reduce((sum, p) => sum + p.amount, 0);
       const completedLessons = user.progress.length;
       return {

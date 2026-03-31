@@ -3,6 +3,8 @@ import { LessonsService } from '../lessons.service';
 import { AiService } from '../ai/ai.service';
 import { PrismaService } from '../prisma.service';
 
+const DEFAULT_PROJECT_ID = 'default';
+
 @Controller('admin/lessons')
 export class AdminLessonsController {
   constructor(
@@ -13,46 +15,41 @@ export class AdminLessonsController {
 
   @Get()
   async getLessons() {
-    // For now we get all lessons across all projects or default project if configured
-    const projectId = process.env.PROJECT_ID;
-    return this.lessonsService.listAll(projectId);
+    return this.lessonsService.listAll();
   }
 
   @Post()
-  async createLesson(@Body() data: { title: string; code: string; description: string; order: number; isPublished: boolean; aiPrompt?: string }) {
-    let projectId = process.env.PROJECT_ID;
-    
-    if (!projectId) {
-      // Find default project
-      const project = await this.prisma.project.findFirst({ orderBy: { createdAt: 'asc' } });
-      if (project) {
-        projectId = project.id;
-      } else {
-        throw new NotFoundException('No active project found to assign lesson to');
-      }
-    }
-
+  async createLesson(
+    @Body()
+    data: {
+      title: string;
+      code: string;
+      description: string;
+      order: number;
+      isPublished: boolean;
+      aiPrompt?: string;
+    },
+  ) {
     const { aiPrompt, ...lessonData } = data;
-    const lesson = await this.lessonsService.create(projectId, lessonData);
+    const lesson = await this.lessonsService.create(lessonData);
 
-    // Currently we have 1 AI Persona per Project, we might update it
     if (aiPrompt) {
       const existingPersona = await this.prisma.aIPersona.findUnique({
-        where: { projectId }
+        where: { projectId: DEFAULT_PROJECT_ID },
       });
 
       if (existingPersona) {
         await this.prisma.aIPersona.update({
-          where: { projectId },
-          data: { prompt: aiPrompt }
+          where: { projectId: DEFAULT_PROJECT_ID },
+          data: { prompt: aiPrompt },
         });
       } else {
         await this.prisma.aIPersona.create({
           data: {
-            projectId,
-            name: "Собеседник по умолчанию",
-            prompt: aiPrompt
-          }
+            projectId: DEFAULT_PROJECT_ID,
+            name: 'Собеседник по умолчанию',
+            prompt: aiPrompt,
+          },
         });
       }
     }
@@ -63,31 +60,36 @@ export class AdminLessonsController {
   @Put(':id')
   async updateLesson(
     @Param('id') id: string,
-    @Body() data: { title: string; code: string; description: string; order: number; isPublished: boolean; aiPrompt?: string }
+    @Body()
+    data: {
+      title: string;
+      code: string;
+      description: string;
+      order: number;
+      isPublished: boolean;
+      aiPrompt?: string;
+    },
   ) {
     const { aiPrompt, ...lessonData } = data;
     const lesson = await this.lessonsService.update(id, lessonData);
 
-    const projectId = lesson.projectId;
-
-    // Update Project AI Persona
-    if (aiPrompt && projectId) {
+    if (aiPrompt) {
       const existingPersona = await this.prisma.aIPersona.findUnique({
-        where: { projectId }
+        where: { projectId: DEFAULT_PROJECT_ID },
       });
 
       if (existingPersona) {
         await this.prisma.aIPersona.update({
-          where: { projectId },
-          data: { prompt: aiPrompt }
+          where: { projectId: DEFAULT_PROJECT_ID },
+          data: { prompt: aiPrompt },
         });
       } else {
         await this.prisma.aIPersona.create({
           data: {
-            projectId,
-            name: "Собеседник по умолчанию",
-            prompt: aiPrompt
-          }
+            projectId: DEFAULT_PROJECT_ID,
+            name: 'Собеседник по умолчанию',
+            prompt: aiPrompt,
+          },
         });
       }
     }
